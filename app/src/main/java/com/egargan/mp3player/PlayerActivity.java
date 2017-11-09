@@ -1,18 +1,45 @@
 package com.egargan.mp3player;
 
+import android.Manifest;
+import android.app.LoaderManager;
 import android.content.ComponentName;
+import android.content.ContentResolver;
+import android.content.Context;
+import android.content.CursorLoader;
+import android.content.Loader;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Environment;
 import android.os.IBinder;
+import android.provider.ContactsContract;
+import android.provider.MediaStore;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ListView;
+import android.widget.SimpleCursorAdapter;
+
+import java.io.File;
 
 public class PlayerActivity extends AppCompatActivity {
 
+    private static final int READ_EXT_STORAGE_REQCODE = 1;
+
+    private static final int MUSIC_LOAD_FAILURE = 0;
+    private static final int MUSIC_LOAD_EMPTY = 1;
+    private static final int MUSIC_LOAD_SUCCESS = 2;
+
     private PlayerService playerService;
     private MP3Player player;
+
+    private SimpleCursorAdapter musicAdapter;
 
     private boolean playerIsBound;
 
@@ -22,15 +49,101 @@ public class PlayerActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_player);
 
+        if (PackageManager.PERMISSION_DENIED == ContextCompat.checkSelfPermission(
+                this, Manifest.permission.READ_EXTERNAL_STORAGE)) {
+
+            ActivityCompat.requestPermissions(this,
+                    new String[] {Manifest.permission.READ_EXTERNAL_STORAGE},
+                    READ_EXT_STORAGE_REQCODE);
+        } else {
+            loadMusicFromStorage();
+            populateList();
+        }
+
         // check if player service exists
         // or maybe just start + bind to service, and handle alread-running state there?
+    }
 
+    @Override
+    public void onRequestPermissionsResult(int reqcode,
+                                           @NonNull String permissions[],
+                                           @NonNull int[] granted) {
+        switch (reqcode) {
+            case READ_EXT_STORAGE_REQCODE: {
+                if (granted.length > 0 &&
+                        granted[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Permission granted, perform load + populate
+                    loadMusicFromStorage();
+                    populateList();
+                } else {
+                    // Permission denied :(
+                }
+            }
+        }
+    }
+
+    /**
+     * Attempts to load all music files from media store.
+     * Instantiates member adapter for ListView if successful.
+     * @return non-zero integer if load successful
+     */
+    private int loadMusicFromStorage() {
+
+        ContentResolver musicResolver = getContentResolver();
+
+        Uri musicUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+
+        String PROJECTION[] = {
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media._ID,
+        };
+
+        // Exclude audiofiles that aren't music, e.g. ringtones
+        String SELECTION = MediaStore.Audio.Media.IS_MUSIC + " <> 0";
+
+        // Get cursor from query - projection applied when adapter is constructed
+        Cursor musicCursor = musicResolver.query(musicUri, null,
+                SELECTION, null, MediaStore.Audio.Media.TITLE);
+
+        if (musicCursor == null) return MUSIC_LOAD_FAILURE;
+
+        // Construct adapter using Android's 2-item list item layout
+        musicAdapter = new SimpleCursorAdapter(getApplicationContext(),
+                android.R.layout.simple_list_item_2,
+                musicCursor,
+                PROJECTION,
+                new int[] { android.R.id.text1, android.R.id.text2},
+                0 );
+
+        return (musicAdapter.isEmpty() ? MUSIC_LOAD_EMPTY : MUSIC_LOAD_SUCCESS);
+    }
+
+    /**
+     * Populates ListView with data from adapter, if possible.
+     */
+    private void populateList() {
+
+        switch (loadMusicFromStorage()) {
+
+            case MUSIC_LOAD_FAILURE :
+                // load fialed, show error
+                Log.i("playeract", "music load failed");
+                break;
+            case MUSIC_LOAD_EMPTY :
+                // load return nothing, show msg
+                Log.i("playeract", "loaded nothing");
+                break;
+            case MUSIC_LOAD_SUCCESS :
+                Log.i("playeract", "music load succeeded");
+                ListView lview = (ListView) findViewById(R.id.songview);
+                lview.setAdapter(musicAdapter);
+        }
     }
 
     private ServiceConnection conn = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
-
             // called when we bound to a service and it returns an
             playerService = ((PlayerService.PlayerBinder)service).getService();
             playerIsBound = true;
@@ -40,24 +153,16 @@ public class PlayerActivity extends AppCompatActivity {
         }
         @Override
         public void onServiceDisconnected(ComponentName name) {
-
             playerService = null;
             playerIsBound = false;
-
             Log.i("playeract","service disconnected");
         }
     };
 
-    @Override
-    protected void onStop() {
-        super.onStop();
-
-        // if player still playing, leave alone
-        // if player paused, stop player + service ... ?
-
-    }
-
-    // called when central pause/play button clicked
+    /**
+     * Handler for pause/play button. Will alternate messages according to player state.
+     * @param btn Event source
+     */
     public void playPause(Button btn) {
 
         if (playerIsBound) {
@@ -77,6 +182,17 @@ public class PlayerActivity extends AppCompatActivity {
                     break;
             }
         }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+
+        musicAdapter.getCursor().close();
+
+        // if player still playing, leave alone
+        // if player paused, stop player + service ... ?
+
     }
 
 

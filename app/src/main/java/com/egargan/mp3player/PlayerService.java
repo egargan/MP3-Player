@@ -2,7 +2,10 @@ package com.egargan.mp3player;
 
 import android.app.IntentService;
 import android.app.Service;
+import android.content.CursorLoader;
 import android.content.Intent;
+import android.content.Loader;
+import android.database.Cursor;
 import android.os.Binder;
 import android.os.IBinder;
 
@@ -15,7 +18,6 @@ public class PlayerService extends Service {
         player = new MP3Player();
         super.onCreate();
     }
-
 
     // Might not need to implement?
     @Override
@@ -43,6 +45,12 @@ public class PlayerService extends Service {
     public void onDestroy() {
         player.stop();
         super.onDestroy();
+    }
+
+    private int loadMusic() {
+
+
+        return 0;
     }
 
     public MP3Player getPlayer() {
