@@ -1,20 +1,20 @@
 package com.egargan.mp3player;
 
-import android.app.IntentService;
 import android.app.Service;
-import android.content.CursorLoader;
 import android.content.Intent;
-import android.content.Loader;
-import android.database.Cursor;
 import android.os.Binder;
 import android.os.IBinder;
+import android.util.Log;
 
 public class PlayerService extends Service {
 
     private MP3Player player;
 
+    // TODO: status bar notification
+
     @Override
     public void onCreate() {
+        Log.i("pservice","service started");
         player = new MP3Player();
         super.onCreate();
     }
@@ -23,7 +23,7 @@ public class PlayerService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
-        return START_STICKY; // Keep
+        return START_STICKY;
     }
 
     private IBinder binder = new PlayerBinder();
@@ -44,11 +44,11 @@ public class PlayerService extends Service {
     @Override
     public void onDestroy() {
         player.stop();
+        Log.i("pservice","service stopped");
         super.onDestroy();
     }
 
     private int loadMusic() {
-
 
         return 0;
     }

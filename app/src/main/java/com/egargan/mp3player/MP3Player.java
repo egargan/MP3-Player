@@ -47,6 +47,8 @@ public class MP3Player {
             return;
         }
 
+        Log.i("player", "Loaded");
+
         this.state = MP3PlayerState.PLAYING;
         mediaPlayer.start();
     }

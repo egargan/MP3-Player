@@ -6,12 +6,14 @@ import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.CursorLoader;
+import android.content.Intent;
 import android.content.Loader;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.IBinder;
 import android.provider.ContactsContract;
 import android.provider.MediaStore;
@@ -22,12 +24,21 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.SimpleCursorAdapter;
 
 import java.io.File;
+import java.net.URI;
+import java.util.Timer;
+import java.util.TimerTask;
 
+/**
+ * Single activity component for player UI. Gets and displays music files from external storage.
+ * Also controls audio playback control buttons.
+ */
 public class PlayerActivity extends AppCompatActivity {
 
     private static final int READ_EXT_STORAGE_REQCODE = 1;
@@ -36,12 +47,15 @@ public class PlayerActivity extends AppCompatActivity {
     private static final int MUSIC_LOAD_EMPTY = 1;
     private static final int MUSIC_LOAD_SUCCESS = 2;
 
+    private boolean playerIsBound;
+
     private PlayerService playerService;
+    private SimpleCursorAdapter musicAdapter;
     private MP3Player player;
 
-    private SimpleCursorAdapter musicAdapter;
+    private Handler handler; // Handler for song progress polling method
 
-    private boolean playerIsBound;
+    private ProgressBar songProgBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,8 +74,15 @@ public class PlayerActivity extends AppCompatActivity {
             populateList();
         }
 
+        handler = new Handler();
+        songProgBar = (ProgressBar) findViewById(R.id.songProgBar);
+
+        Intent intent = new Intent(getApplicationContext(), PlayerService.class);
+        startService(intent);
+
+        bindService(intent, conn, 0);
         // check if player service exists
-        // or maybe just start + bind to service, and handle alread-running state there?
+        // or maybe just start + bind to service, and handle already-running state there?
     }
 
     @Override
@@ -96,7 +117,7 @@ public class PlayerActivity extends AppCompatActivity {
         String PROJECTION[] = {
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DATA
         };
 
         // Exclude audiofiles that aren't music, e.g. ringtones
@@ -119,6 +140,31 @@ public class PlayerActivity extends AppCompatActivity {
         return (musicAdapter.isEmpty() ? MUSIC_LOAD_EMPTY : MUSIC_LOAD_SUCCESS);
     }
 
+    // Listener attached to each listview item
+    AdapterView.OnItemClickListener songItemListener = new AdapterView.OnItemClickListener() {
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+
+            // TODO: check player/service state maybs?
+            // TODO: decompose into general 'play song' function for prev/next btns
+
+            player.stop(); // New media player instantiated for each file, so can stop instead of pause
+
+            MP3Player player = playerService.getPlayer();
+            Cursor cursor = musicAdapter.getCursor();
+
+            int pathColIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATA);
+
+            if (cursor.isClosed() || pathColIndex < 0 || player == null) return;
+
+            cursor.moveToPosition(position);
+            player.load(cursor.getString(pathColIndex));
+
+            songProgBar.setMax(player.getDuration());
+            handler.post(updateSongProgressBar);
+        }
+    };
+
     /**
      * Populates ListView with data from adapter, if possible.
      */
@@ -138,6 +184,7 @@ public class PlayerActivity extends AppCompatActivity {
                 Log.i("playeract", "music load succeeded");
                 ListView lview = (ListView) findViewById(R.id.songview);
                 lview.setAdapter(musicAdapter);
+                lview.setOnItemClickListener(songItemListener);
         }
     }
 
@@ -153,6 +200,7 @@ public class PlayerActivity extends AppCompatActivity {
         }
         @Override
         public void onServiceDisconnected(ComponentName name) {
+            // Only called when not properly disconnected
             playerService = null;
             playerIsBound = false;
             Log.i("playeract","service disconnected");
@@ -184,12 +232,34 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
+    private Runnable updateSongProgressBar = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                songProgBar.setProgress(playerService.getPlayer().getProgress());
+            } finally {
+                if (player.getState() != MP3Player.MP3PlayerState.STOPPED) {
+                    handler.postDelayed(updateSongProgressBar, 50);
+                }
+            }
+        }
+    };
+
     @Override
     protected void onStop() {
+
         super.onStop();
 
         musicAdapter.getCursor().close();
 
+
+        // Close player in activity stop for now - but will persist soon
+        if(conn != null) {
+            unbindService(conn);
+        }
+
+        //Intent intent = new Intent(this, PlayerService.class);
+        //stopService(intent);
         // if player still playing, leave alone
         // if player paused, stop player + service ... ?
 
