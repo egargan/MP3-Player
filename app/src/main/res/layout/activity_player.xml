@@ -35,11 +35,12 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/button4"
+                android:id="@+id/prevBtn"
                 style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:onClick="prevNext"
                 android:text="@string/prevBtnText" />
 
             <Button
@@ -48,14 +49,16 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:onClick="playPause"
                 android:text="@string/pausedBtnText" />
 
             <Button
-                android:id="@+id/button5"
+                android:id="@+id/nextBtn"
                 style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:onClick="prevNext"
                 android:text="@string/nextBtnText" />
         </LinearLayout>
     </LinearLayout>

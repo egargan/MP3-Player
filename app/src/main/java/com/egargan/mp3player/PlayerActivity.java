@@ -11,6 +11,7 @@ import android.content.Loader;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
@@ -32,6 +33,7 @@ import android.widget.SimpleCursorAdapter;
 
 import java.io.File;
 import java.net.URI;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -48,6 +50,7 @@ public class PlayerActivity extends AppCompatActivity {
     private static final int MUSIC_LOAD_SUCCESS = 2;
 
     private boolean playerIsBound;
+    private int currentSongIndex = -1;
 
     private PlayerService playerService;
     private SimpleCursorAdapter musicAdapter;
@@ -69,6 +72,7 @@ public class PlayerActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this,
                     new String[] {Manifest.permission.READ_EXTERNAL_STORAGE},
                     READ_EXT_STORAGE_REQCODE);
+
         } else {
             loadMusicFromStorage();
             populateList();
@@ -85,6 +89,25 @@ public class PlayerActivity extends AppCompatActivity {
         // or maybe just start + bind to service, and handle already-running state there?
     }
 
+    private ServiceConnection conn = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            // called when we bind to a service
+            playerService = ((PlayerService.PlayerBinder)service).getService();
+            playerIsBound = true;
+
+            player = playerService.getPlayer();
+            Log.i("playeract","service connected");
+        }
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            // only called when not properly disconnected
+            playerService = null;
+            playerIsBound = false;
+            Log.i("playeract","service disconnected");
+        }
+    };
+
     @Override
     public void onRequestPermissionsResult(int reqcode,
                                            @NonNull String permissions[],
@@ -98,6 +121,7 @@ public class PlayerActivity extends AppCompatActivity {
                     populateList();
                 } else {
                     // Permission denied :(
+                    // TODO : show permission denied msg
                 }
             }
         }
@@ -130,7 +154,8 @@ public class PlayerActivity extends AppCompatActivity {
         if (musicCursor == null) return MUSIC_LOAD_FAILURE;
 
         // Construct adapter using Android's 2-item list item layout
-        musicAdapter = new SimpleCursorAdapter(getApplicationContext(),
+        musicAdapter = new SimpleCursorAdapter(
+                getApplicationContext(),
                 android.R.layout.simple_list_item_2,
                 musicCursor,
                 PROJECTION,
@@ -144,36 +169,74 @@ public class PlayerActivity extends AppCompatActivity {
     AdapterView.OnItemClickListener songItemListener = new AdapterView.OnItemClickListener() {
         @Override
         public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-
-            // TODO: check player/service state maybs?
-            // TODO: decompose into general 'play song' function for prev/next btns
-
-            player.stop(); // New media player instantiated for each file, so can stop instead of pause
-
-            MP3Player player = playerService.getPlayer();
-            Cursor cursor = musicAdapter.getCursor();
-
-            int pathColIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATA);
-
-            if (cursor.isClosed() || pathColIndex < 0 || player == null) return;
-
-            cursor.moveToPosition(position);
-            player.load(cursor.getString(pathColIndex));
-
-            songProgBar.setMax(player.getDuration());
-            handler.post(updateSongProgressBar);
+            changeSongTo(position);
         }
     };
 
     /**
-     * Populates ListView with data from adapter, if possible.
+     * Error checks + updates UI before calling actual song-playing method.
+     * @param position Index of song in listview to be played.
+     */
+    private void changeSongTo(int position) {
+
+        if (musicAdapter == null) return;
+
+        Cursor cursor = musicAdapter.getCursor();
+        ListView songview = findViewById(R.id.songview);
+
+        if (currentSongIndex >= 0) { // Reset previously played song's bg colour
+            songview.getChildAt(currentSongIndex).setBackgroundColor(Color.WHITE);
+        }
+
+        currentSongIndex = position;
+
+        // If erroneous song index received, assume from 'prev' or 'next' btn click, so stop player
+        if (position >= musicAdapter.getCount() || position < 0) {
+            player.stop();
+            currentSongIndex = -1;
+            return;
+        }
+        // Cursor position changes automatically onClick,
+        // but we do have to set it on prev/next click.
+        cursor.moveToPosition(currentSongIndex);
+        playSongAtCursor();
+
+        updatePlayPauseBtn();
+
+        songview.getChildAt(currentSongIndex).
+                setBackgroundColor(getColor(R.color.colorSongItemBgHighlight));
+    }
+
+
+    /**
+     *  Plays song pointed to by the cursor object.
+     */
+    private void playSongAtCursor() {
+
+        player.stop(); // New media player instantiated for each file, so can stop instead of pause
+
+        MP3Player player = playerService.getPlayer();
+        Cursor cursor = musicAdapter.getCursor();
+
+        int pathColIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATA);
+
+        if (cursor.isClosed() || pathColIndex < 0 || player == null) return;
+
+        player.load(cursor.getString(pathColIndex));
+
+        songProgBar.setMax(player.getDuration());
+        handler.post(updateSongProgressBar);
+    }
+
+    /**
+     *  Populates ListView with data from adapter, if possible.
      */
     private void populateList() {
 
         switch (loadMusicFromStorage()) {
 
             case MUSIC_LOAD_FAILURE :
-                // load fialed, show error
+                // load failed, show error
                 Log.i("playeract", "music load failed");
                 break;
             case MUSIC_LOAD_EMPTY :
@@ -188,48 +251,85 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
-    private ServiceConnection conn = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            // called when we bound to a service and it returns an
-            playerService = ((PlayerService.PlayerBinder)service).getService();
-            playerIsBound = true;
-
-            player = playerService.getPlayer();
-            Log.i("playeract","service connected");
-        }
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            // Only called when not properly disconnected
-            playerService = null;
-            playerIsBound = false;
-            Log.i("playeract","service disconnected");
-        }
-    };
+    // ---  GUI Control Methods  --- //
 
     /**
      * Handler for pause/play button. Will alternate messages according to player state.
-     * @param btn Event source
+     * @param view Event source
      */
-    public void playPause(Button btn) {
+    public void playPause(View view) {
 
         if (playerIsBound) {
-
             MP3Player player = playerService.getPlayer();
 
             switch(player.getState()) {
 
                 case PLAYING : // then pause music
                     player.pause();
-                    btn.setText(R.string.pausedBtnText);
                     break;
 
                 case PAUSED : // then play music
                     player.play();
-                    btn.setText(R.string.playingBtnText);
+                    break;
+
+                case STOPPED : // then just play first in list
+                    if (musicAdapter == null) return;
+                    changeSongTo(0);
                     break;
             }
+            updatePlayPauseBtn();
         }
+    }
+
+    /**
+     * Handler for 'previous' and 'next' buttons - method shared as function is so similar
+     * @param view Event source
+     */
+    public void prevNext(View view) {
+
+        // return if not song not playing or paused
+        if (musicAdapter == null || player.getState() == MP3Player.MP3PlayerState.STOPPED ||
+                player.getState() == MP3Player.MP3PlayerState.ERROR)
+            return;
+
+        String sourceId = view.getResources().getResourceEntryName(view.getId());
+
+        switch (sourceId) {
+
+            case "prevBtn":
+                if (currentSongIndex == 0) { // If at beginning of list, wrap around to end
+                    changeSongTo(musicAdapter.getCount() - 1);
+                } else {
+                    changeSongTo(currentSongIndex - 1);
+                }
+                break;
+
+            case "nextBtn":
+                if (currentSongIndex == musicAdapter.getCount() - 1) { // If at end, wrap to start
+                    changeSongTo(0);
+                } else {
+                    changeSongTo(currentSongIndex + 1);
+                }
+                break;
+        }
+    }
+
+    // Sets play/pause btn text to represent player state
+    private void updatePlayPauseBtn() {
+
+        switch (player.getState()) {
+
+            case STOPPED:
+            case ERROR:
+            case PAUSED:
+                ((Button) findViewById(R.id.pausePlayBtn)).setText(R.string.pausedBtnText);
+                break;
+
+            case PLAYING:
+                ((Button) findViewById(R.id.pausePlayBtn)).setText(R.string.playingBtnText);
+                break;
+        }
+
     }
 
     private Runnable updateSongProgressBar = new Runnable() {
@@ -262,7 +362,6 @@ public class PlayerActivity extends AppCompatActivity {
         //stopService(intent);
         // if player still playing, leave alone
         // if player paused, stop player + service ... ?
-
     }
 
 
