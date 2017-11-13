@@ -79,7 +79,7 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         handler = new Handler();
-        songProgBar = (ProgressBar) findViewById(R.id.songProgBar);
+        songProgBar = findViewById(R.id.songProgBar);
 
         Intent intent = new Intent(getApplicationContext(), PlayerService.class);
         startService(intent);
@@ -196,9 +196,11 @@ public class PlayerActivity extends AppCompatActivity {
             currentSongIndex = -1;
             return;
         }
+
         // Cursor position changes automatically onClick,
         // but we do have to set it on prev/next click.
         cursor.moveToPosition(currentSongIndex);
+
         playSongAtCursor();
 
         updatePlayPauseBtn();
@@ -206,7 +208,6 @@ public class PlayerActivity extends AppCompatActivity {
         songview.getChildAt(currentSongIndex).
                 setBackgroundColor(getColor(R.color.colorSongItemBgHighlight));
     }
-
 
     /**
      *  Plays song pointed to by the cursor object.
@@ -245,7 +246,7 @@ public class PlayerActivity extends AppCompatActivity {
                 break;
             case MUSIC_LOAD_SUCCESS :
                 Log.i("playeract", "music load succeeded");
-                ListView lview = (ListView) findViewById(R.id.songview);
+                ListView lview = findViewById(R.id.songview);
                 lview.setAdapter(musicAdapter);
                 lview.setOnItemClickListener(songItemListener);
         }
@@ -292,9 +293,7 @@ public class PlayerActivity extends AppCompatActivity {
                 player.getState() == MP3Player.MP3PlayerState.ERROR)
             return;
 
-        String sourceId = view.getResources().getResourceEntryName(view.getId());
-
-        switch (sourceId) {
+        switch (view.getResources().getResourceEntryName(view.getId())) { // Get Id w/o path
 
             case "prevBtn":
                 if (currentSongIndex == 0) { // If at beginning of list, wrap around to end
@@ -318,10 +317,7 @@ public class PlayerActivity extends AppCompatActivity {
     private void updatePlayPauseBtn() {
 
         switch (player.getState()) {
-
-            case STOPPED:
-            case ERROR:
-            case PAUSED:
+            case STOPPED: case ERROR: case PAUSED:
                 ((Button) findViewById(R.id.pausePlayBtn)).setText(R.string.pausedBtnText);
                 break;
 
@@ -329,7 +325,6 @@ public class PlayerActivity extends AppCompatActivity {
                 ((Button) findViewById(R.id.pausePlayBtn)).setText(R.string.playingBtnText);
                 break;
         }
-
     }
 
     private Runnable updateSongProgressBar = new Runnable() {
@@ -352,7 +347,6 @@ public class PlayerActivity extends AppCompatActivity {
 
         musicAdapter.getCursor().close();
 
-
         // Close player in activity stop for now - but will persist soon
         if(conn != null) {
             unbindService(conn);
@@ -363,6 +357,5 @@ public class PlayerActivity extends AppCompatActivity {
         // if player still playing, leave alone
         // if player paused, stop player + service ... ?
     }
-
 
 }
