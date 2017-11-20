@@ -12,8 +12,8 @@ import android.support.v4.app.NotificationCompat;
 import android.util.Log;
 
 /**
- *  Service wrapper for MP3Player object. Exists as a foreground service, whose status bar
- *  notification can be used to navigate back to / relaunch PlayerActivity instance.
+ *  Service wrapper for MP3Player class. Exists as a foreground service, whose status bar
+ *  notification can be used to navigate back to / relaunch PlayerActivity.
  */
 public class PlayerService extends Service {
 
@@ -36,7 +36,6 @@ public class PlayerService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
-        // Poll media player for state to update MP3Player state
         handler = new Handler();
 
         updateNotification();
@@ -71,6 +70,7 @@ public class PlayerService extends Service {
 
         super.onDestroy();
     }
+
 
     /** MP3Player does not 'stop' itself when song ends - this runnable reposts itself
         until the song is found to have stopped. */
@@ -113,6 +113,7 @@ public class PlayerService extends Service {
                 .setOngoing(true) // 'ongoing' notifications are pushed left ahead of others
                 .setContentIntent(pendingIntent);
         }
+
         notiBuilder.setContentText(message);
 
         Notification noti = notiBuilder.build();

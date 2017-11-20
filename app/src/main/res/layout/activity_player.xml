@@ -12,21 +12,35 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <ListView
-            android:id="@+id/songview"
+        <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:gravity="center"
             android:layout_weight="2">
 
-        </ListView>
+            <TextView
+                android:id="@+id/statusMsgTxt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="TextView" />
+
+            <ListView
+                android:id="@+id/songview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_weight="2"
+                android:visibility="visible">
+
+            </ListView>
+        </RelativeLayout>
 
         <ProgressBar
             android:id="@+id/songProgBar"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="500"
-            android:progress="30" />
+            android:max="500" />
 
         <LinearLayout
             android:layout_width="match_parent"

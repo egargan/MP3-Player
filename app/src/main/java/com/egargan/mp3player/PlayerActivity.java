@@ -24,6 +24,7 @@ import android.widget.Button;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.SimpleCursorAdapter;
+import android.widget.TextView;
 
 /**
  * Single activity component for player UI. Gets and displays music files from external storage.
@@ -82,14 +83,12 @@ public class PlayerActivity extends AppCompatActivity {
             // called when we bind to a service
             player = ((PlayerService.PlayerBinder)service).getService();
             playerIsBound = true;
-            Log.i("playeract","service connected");
         }
         @Override
         public void onServiceDisconnected(ComponentName name) {
             // only called when not properly disconnected
             player = null;
             playerIsBound = false;
-            Log.i("playeract","service disconnected");
         }
     };
 
@@ -105,8 +104,7 @@ public class PlayerActivity extends AppCompatActivity {
                     loadMusicFromStorage();
                     populateList();
                 } else {
-                    // Permission denied :(
-                    // TODO : show permission denied msg
+                    updateStatusMsg(true, "We need permission to read your music!");
                 }
             }
         }
@@ -129,11 +127,12 @@ public class PlayerActivity extends AppCompatActivity {
         };
 
         // Exclude audiofiles that aren't music, e.g. ringtones
-        //String SELECTION = MediaStore.Audio.Media.IS_MUSIC + " <> 0";
+        // SELECTION = MediaStore.Audio.Media.IS_MUSIC + " <> 0";
+        String SELECTION = "";
 
         // Get cursor from query - projection applied when adapter is constructed
         Cursor musicCursor = musicResolver.query(musicUri, null,
-                null, null, MediaStore.Audio.Media.TITLE);
+                SELECTION, null, MediaStore.Audio.Media.TITLE);
 
         if (musicCursor == null) return MUSIC_LOAD_FAILURE;
 
@@ -147,6 +146,28 @@ public class PlayerActivity extends AppCompatActivity {
                 0 );
 
         return (musicAdapter.isEmpty() ? MUSIC_LOAD_EMPTY : MUSIC_LOAD_SUCCESS);
+    }
+
+    /** Populates ListView with data from adapter, if possible.
+     *  Switches on status code return from music load method + displays appropriate status msg. */
+    private void populateList() {
+
+        switch (loadMusicFromStorage()) {
+
+            case MUSIC_LOAD_FAILURE :
+                updateStatusMsg(true, "Error loading songs :(");
+                break;
+
+            case MUSIC_LOAD_EMPTY :
+                updateStatusMsg(true, "Couldn't find any music!");
+                break;
+
+            case MUSIC_LOAD_SUCCESS :
+                updateStatusMsg(false, null);
+                ListView lview = findViewById(R.id.songview);
+                lview.setAdapter(musicAdapter);
+                lview.setOnItemClickListener(songItemListener);
+        }
     }
 
     // Listener attached to each listview item
@@ -163,7 +184,6 @@ public class PlayerActivity extends AppCompatActivity {
 
         if (musicAdapter == null) return;
 
-        Cursor cursor = musicAdapter.getCursor();
         ListView songview = findViewById(R.id.songview);
 
         if (currentSongIndex >= 0) { // Reset previously played song's bg colour
@@ -181,11 +201,9 @@ public class PlayerActivity extends AppCompatActivity {
 
         // Cursor position changes automatically onClick,
         // but we do have to set it on prev/next click.
-        cursor.moveToPosition(currentSongIndex);
+        musicAdapter.getCursor().moveToPosition(currentSongIndex);
 
         playSongAtCursor();
-
-        updatePlayPauseBtn();
 
         songview.getChildAt(currentSongIndex).
                 setBackgroundColor(getColor(R.color.colorSongItemBgHighlight));
@@ -193,7 +211,6 @@ public class PlayerActivity extends AppCompatActivity {
         if (!isPolling) { // Make poller, if one has not already been posted
             handler.post(new ProgressPoller());
         }
-
     }
 
     /** Plays song pointed to by the cursor object. */
@@ -211,64 +228,45 @@ public class PlayerActivity extends AppCompatActivity {
         songProgBar.setMax(player.getSongDuration());
     }
 
-    /** Populates ListView with data from adapter, if possible. */
-    private void populateList() {
-
-        switch (loadMusicFromStorage()) {
-
-            case MUSIC_LOAD_FAILURE :
-                // load failed, show error
-                Log.i("playeract", "music load failed");
-                break;
-            case MUSIC_LOAD_EMPTY :
-                // load return nothing, show msg
-                Log.i("playeract", "loaded nothing");
-                break;
-            case MUSIC_LOAD_SUCCESS :
-                Log.i("playeract", "music load succeeded");
-                ListView lview = findViewById(R.id.songview);
-                lview.setAdapter(musicAdapter);
-                lview.setOnItemClickListener(songItemListener);
-        }
-    }
-
     // ---  GUI Control Methods  --- //
 
     /** Handler for pause/play button. Will alternate messages according to player state.
-     * @param view Event source */
+     *  @param view Event source */
     public void playPause(View view) {
 
-        if (playerIsBound) {
+        if (musicAdapter == null ||
+                musicAdapter.isEmpty() ||
+                !playerIsBound)
+            return;
 
-            switch(player.getState()) {
+        switch(player.getState()) {
 
-                case PLAYING : // then pause music
-                    player.pause();
-                    break;
+            case PLAYING : // then pause music
+                player.pause();
+                break;
 
-                case PAUSED : // then play music
-                    player.play();
-                    break;
+            case PAUSED : // then play music
+                player.play();
+                break;
 
-                case STOPPED : // then just play first in list
-                    if (musicAdapter == null) return;
-                    if (currentSongIndex == -1) currentSongIndex = 0;
+            case STOPPED : // then just play first in list
+                if (musicAdapter == null) return;
+                if (currentSongIndex == -1) currentSongIndex = 0;
 
-                    changeSongTo(currentSongIndex);
-                    break;
-            }
-            updatePlayPauseBtn();
+                changeSongTo(currentSongIndex);
+                break;
         }
+        updatePlayPauseBtn();
     }
 
-    /**
-     * Handler for 'previous' and 'next' buttons - method shared as function is so similar
-     * @param view Event source
-     */
+    /** Handler for 'previous' and 'next' buttons - method shared as function is so similar.
+     * @param view Event source */
     public void prevNext(View view) {
 
         // return if not song not playing or paused
-        if (musicAdapter == null || player.getState() == MP3Player.MP3PlayerState.STOPPED ||
+        if (musicAdapter == null ||
+                musicAdapter.isEmpty() ||
+                player.getState() == MP3Player.MP3PlayerState.STOPPED ||
                 player.getState() == MP3Player.MP3PlayerState.ERROR)
             return;
 
@@ -292,8 +290,24 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
-    // Sets play/pause btn text to represent player state
+    /** Controls visibility + text of UI's central status message. */
+    private void updateStatusMsg(boolean show, String msg) {
+
+        TextView statusMsg = findViewById(R.id.statusMsgTxt);
+
+        if (show) {
+            statusMsg.setText(msg);
+            statusMsg.setVisibility(View.VISIBLE);
+        } else {
+            statusMsg.setText("");
+            statusMsg.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    /** Sets play/pause button text to represent player state. */
     public void updatePlayPauseBtn() {
+
+        if (!playerIsBound) return;
 
         switch (player.getState()) {
 
@@ -307,8 +321,8 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
-    // Runnable for polling player service state, and updating UI.
-    // Will repost itself until song has stopped.
+    /** Runnable for polling player service state, and updating UI.
+        Will repost itself until song has stopped. */
     private class ProgressPoller implements Runnable {
 
         @Override
@@ -316,9 +330,7 @@ public class PlayerActivity extends AppCompatActivity {
 
             switch (player.getState()) {
 
-                case PAUSED:
-                    updatePlayPauseBtn();
-                case PLAYING:
+                case PAUSED: case PLAYING:
                     songProgBar.setProgress(player.getSongProgress());
                     isPolling = handler.postDelayed(new ProgressPoller(), 50);
                     break;
@@ -328,7 +340,7 @@ public class PlayerActivity extends AppCompatActivity {
                     isPolling = false;
                     break;
             }
-
+            updatePlayPauseBtn();
         }
     }
 
